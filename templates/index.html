@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drag and Drop Multiple Image Resizer</title>
+    <style>
+        /* General Styles */
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 50px;
+        }
+
+        /* Buttons Container */
+        #buttons-container {
+            text-align: center;
+            margin: 20px auto;
+        }
+
+        /* Buttons Styles */
+        #buttons-container button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #buttons-container button:hover {
+            background-color: #0056b3;
+        }
+
+        /* Disabled Button Style */
+        #buttons-container button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        /* Progress Bar Container */
+        #progress-container {
+            width: 80%;
+            max-width: 600px;
+            height: 20px;
+            background-color: #f3f3f3;
+            margin: 20px auto;
+            border-radius: 10px;
+            overflow: hidden;
+            /* Always visible */
+        }
+
+        /* Progress Bar Indicator */
+        #progress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: #28a745;
+            border-radius: 10px;
+            transition: width 0.2s;
+        }
+
+        /* Progress Bar Text */
+        #progress-text {
+            text-align: center;
+            margin-top: 5px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* Drag-and-Drop Area Styles */
+        #drop-area {
+            border: 2px dashed #ccc;
+            border-radius: 20px;
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 20px;
+            text-align: center;
+            transition: border 0.3s;
+        }
+
+        #drop-area.highlight {
+            border-color: #333;
+        }
+
+        #drop-area p {
+            font-size: 16px;
+            color: #666;
+        }
+
+        #drop-area .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            margin-top: 10px;
+            text-decoration: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #drop-area .button:hover {
+            background-color: #218838;
+        }
+
+        /* Hidden File Input */
+        #fileElem {
+            display: none;
+        }
+
+        /* Gallery Styles */
+        #gallery {
+            margin: 50px auto;
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .gallery-item {
+            margin: 10px;
+        }
+
+        .gallery-item img {
+            width: 150px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Drag and Drop to Resize Multiple JPEG/JPG Images</h1>
+
+    <!-- Buttons Container at the Top -->
+    <div id="buttons-container">
+        <button id="download-all-btn" onclick="downloadAll()" disabled>Download All as ZIP</button>
+        <button id="clear-btn" onclick="clearGallery()" disabled>Clear</button>
+    </div>
+
+    <!-- Progress Bar -->
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div id="progress-text">Upload</div>
+
+    <div id="drop-area">
+        <form id="upload-form" enctype="multipart/form-data" method="post">
+            <p>Drag and drop JPEG/JPG images here, or click to select images.</p>
+            <input type="file" id="fileElem" name="images" accept=".jpeg, .jpg" multiple required onchange="handleFiles(this.files)">
+            <label class="button" for="fileElem">Select files</label>
+        </form>
+    </div>
+
+    <div id="gallery"></div>
+
+    <script>
+        let dropArea = document.getElementById('drop-area');
+        let downloadAllButton = document.getElementById('download-all-btn');
+        let clearButton = document.getElementById('clear-btn');
+        let progressContainer = document.getElementById('progress-container');
+        let progressBar = document.getElementById('progress-bar');
+        let progressText = document.getElementById('progress-text');
+
+        // Set initial progress text to 'Upload'
+        progressBar.style.width = '0%';
+        progressText.textContent = 'Upload';
+
+        // Prevent default behaviors for drag-and-drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop area when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+
+        // Handle dropped files
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            // Clear the gallery before displaying new images
+            clearGallery(false); // Pass false to not disable buttons here
+
+            let formData = new FormData();
+
+            // Append all files to the FormData
+            for (let i = 0; i < files.length; i++) {
+                formData.append('images', files[i]);
+            }
+
+            // Reset and update the progress bar
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Uploading...';
+
+            let xhr = new XMLHttpRequest();
+
+            xhr.open('POST', '/upload', true);
+
+            // Upload progress event
+            xhr.upload.addEventListener('progress', function (e) {
+                if (e.lengthComputable) {
+                    let percentComplete = (e.loaded / e.total) * 50; // Upload is 50% of total progress
+                    progressBar.style.width = percentComplete + '%';
+                }
+            });
+
+            // Response received
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === XMLHttpRequest.DONE) {
+                    if (xhr.status === 200) {
+                        // Simulate processing progress
+                        simulateProcessingProgress(function () {
+                            let data = JSON.parse(xhr.responseText);
+                            data.files.forEach(file => {
+                                let galleryItem = document.createElement('div');
+                                galleryItem.classList.add('gallery-item');
+
+                                let img = document.createElement('img');
+                                img.src = file.url;
+                                galleryItem.appendChild(img);
+
+                                document.getElementById('gallery').appendChild(galleryItem);
+                            });
+
+                            // Enable the buttons after images are uploaded and processed
+                            downloadAllButton.disabled = false;
+                            clearButton.disabled = false;
+
+                            // Reset progress bar after completion
+                            progressBar.style.width = '100%';
+                            progressText.textContent = 'Completed';
+                            setTimeout(() => {
+                                progressBar.style.width = '0%';
+                                progressText.textContent = 'Upload';
+                            }, 2000); // Reset after 2 seconds
+                        });
+                    } else {
+                        console.error('Error:', xhr.statusText);
+                        alert('An error occurred during the upload.');
+                        // Reset progress bar on error
+                        progressBar.style.width = '0%';
+                        progressText.textContent = 'Upload';
+                    }
+                }
+            };
+
+            xhr.send(formData);
+        }
+
+        function simulateProcessingProgress(callback) {
+            let percent = parseFloat(progressBar.style.width) || 50; // Start from where upload left off
+            progressText.textContent = 'Processing...';
+            let interval = setInterval(function () {
+                if (percent < 100) {
+                    percent += 5; // Increase by 5% every 100ms
+                    progressBar.style.width = percent + '%';
+                } else {
+                    clearInterval(interval);
+                    callback();
+                }
+            }, 100);
+        }
+
+        function downloadAll() {
+            if (downloadAllButton.disabled) {
+                alert('No images available for download.');
+                return;
+            }
+
+            fetch('/download-all')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('No files available for download.');
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    let url = window.URL.createObjectURL(blob);
+                    let a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'resized_images.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                })
+                .catch(error => alert(error.message));
+        }
+
+        function clearGallery(disableButtons = true) {
+            // Clear the gallery div
+            document.getElementById('gallery').innerHTML = '';
+
+            if (disableButtons) {
+                // Disable the buttons
+                downloadAllButton.disabled = true;
+                clearButton.disabled = true;
+            }
+
+            // Reset progress bar
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Upload';
+        }
+    </script>
+
+</body>
+</html>
